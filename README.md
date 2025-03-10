@@ -47,6 +47,11 @@ sqlgbm supports different output formats:
 - `prediction`: Returns the binary prediction (0 or 1) based on a 0.5 threshold
 - `all`: Returns all three outputs
 
+### Roadmap
+
+- [ ] Add support for more models (e.g. XGBoost, CatBoost)
+- [ ] Optimize tree generation for large datasets
+
 ### License
 
 MIT
