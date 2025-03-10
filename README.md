@@ -3,6 +3,8 @@
 sqlgbm is a Python library that converts tree-based machine learning models into SQL queries.
 This allows you to deploy your ML models directly in your database without any additional infrastructure.
 
+![sqlgbm in action](assets/image.png)
+
 ### Installation
 
 ```bash

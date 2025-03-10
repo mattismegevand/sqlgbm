@@ -13,7 +13,7 @@ from sqlgbm import SQLGBM
 def run_benchmark(args):
   """Run a simple benchmark comparing TreeSQL to native LightGBM."""
   print("Loading data...")
-  titanic = pd.read_csv(os.path.join(os.path.dirname(__file__), 'titanic.csv'))
+  titanic = pd.read_csv(os.path.join(os.path.dirname(__file__), '../assets/titanic.csv'))
   titanic['age'].fillna(titanic['age'].median(), inplace=True)
   titanic['embarked'].fillna(titanic['embarked'].mode()[0], inplace=True)
   features = ['pclass', 'sex', 'age', 'sibsp', 'parch', 'fare', 'embarked']
