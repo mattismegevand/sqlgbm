@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sqlgbm"
+version = "0.1.0"
+authors = [
+    {name = "Mattis Megevand", email = "megevand.mattis@gmail.com"},
+]
+description = "Convert tree-based ML models to SQL queries"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pandas>=1.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/mattismegevand/sqlgbm"
+"Bug Tracker" = "https://github.com/mattismegevand/sqlgbm/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sqlgbm"] 
