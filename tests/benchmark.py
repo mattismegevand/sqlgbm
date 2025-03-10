@@ -37,9 +37,7 @@ def run_benchmark(args):
   y_test = y.iloc[test_indices]
 
   print("Training model...")
-  clf = lgb.LGBMClassifier(n_estimators=args.n_estimators,
-  max_depth=args.max_depth,
-  verbose=-1)
+  clf = lgb.LGBMClassifier(n_estimators=args.n_estimators, max_depth=args.max_depth, verbose=-1)
   clf.fit(X_train, y_train, categorical_feature=cat_features)
 
   print("Converting to SQL...")
