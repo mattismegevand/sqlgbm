@@ -12,10 +12,10 @@ import xgboost as xgb
 from sqlgbm import SQLGBM
 
 titanic = pd.read_csv(os.path.join(os.path.dirname(__file__), '../assets/titanic.csv'))
-titanic['age'].fillna(titanic['age'].median(), inplace=True)
-titanic['embarked'].fillna(titanic['embarked'].mode()[0], inplace=True)
+titanic['age'] = titanic['age'].fillna(titanic['age'].median())
+titanic['embarked'] = titanic['embarked'].fillna(titanic['embarked'].mode()[0])
 features = ['pclass', 'sex', 'age', 'sibsp', 'parch', 'fare', 'embarked']
-X = titanic[features]
+X = titanic[features].copy()
 y = titanic['survived']
 X['sex'] = X['sex'].astype('category')
 X['embarked'] = X['embarked'].astype('category')
