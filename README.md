@@ -7,14 +7,28 @@ This allows you to deploy your ML models directly in your database without any a
 
 ![sqlgbm in action](assets/image.png)
 
-### Installation
+### installation
 ```bash
 pip install sqlgbm
 ```
 
-## Usage
+### overview
 
-sqlgbm currently supports LightGBM and XGBoost models and can convert them to SQL queries:
+sqlgbm takes your trained tree-based models and generates SQL code that reproduces the model's predictions. This enables you to:
+
+- Run predictions directly in your database
+- Eliminate latency from API calls between your database and ML serving infrastructure
+- Simplify your production architecture by removing additional serving components
+
+### supported models
+
+Currently supported models:
+- LightGBM
+- XGBoost
+
+### usage
+
+#### basic example
 
 ```python
 from sqlgbm import SQLGBM
@@ -39,20 +53,42 @@ sql = sqlgbm.generate_query('titanic', 'probability')
 print(sql)
 ```
 
-### Output Types
+#### xgboost example
 
-sqlgbm supports different output formats:
+```python
+import xgboost as xgb
+from sqlgbm import SQLGBM
+
+# Prepare data and train model
+# ...
+
+# Convert XGBoost model to SQL
+model = xgb.XGBClassifier(n_estimators=3, max_depth=3, base_score=0.5)
+model.fit(X, y)
+
+sqlgbm = SQLGBM(model, X=X)  # X used to infer categorical features
+sql = sqlgbm.generate_query('my_table', 'all')
+```
+
+#### output types
+
+sqlgbm supports different output formats through the `output_type` parameter:
 
 - `raw`: Returns the raw model output
 - `probability`: Returns the probability (after sigmoid transformation)
 - `prediction`: Returns the binary prediction (0 or 1) based on a 0.5 threshold
 - `all`: Returns all three outputs
 
-### Roadmap
+Additional options:
+- `fast_sigmoid`: Use a faster approximation of the sigmoid function
+
+## roadmap
 
 - [ ] Add support for CatBoost
-- [ ] Optimize tree generation for large datasets
+- [ ] Optimize SQL generation for large models
+- [ ] Add support for multiclass classification
+- [ ] Provide specialized optimizations for different database engines
 
-### License
+## license
 
 MIT
