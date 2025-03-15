@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import argparse
 import lightgbm as lgb
 import numpy as np
 import os
 import pandas as pd
 import polars as pl
 import unittest
+import xgboost as xgb
 
 from sqlgbm import SQLGBM
 
@@ -29,18 +31,24 @@ X_test = X.iloc[test_indices]
 y_train = y.iloc[train_indices]
 y_test = y.iloc[test_indices]
 
-clf = lgb.LGBMClassifier(n_estimators=2, max_depth=3, verbose=-1)
+clf = lgb.LGBMClassifier(n_estimators=10, max_depth=10, verbose=-1)
 clf.fit(X_train, y_train, categorical_feature=cat_features)
 
+xgb_clf = xgb.XGBClassifier(n_estimators=10, max_depth=10, enable_categorical=True, base_score=0.5)
+xgb_clf.fit(X_train, y_train)
+
 sqlgbm = SQLGBM(clf, cat_features)
+sqlgbm_xgb = SQLGBM(xgb_clf, X_train)
 table_name = 'self'
 sql_query = sqlgbm.generate_query(table_name)
 sql_query_proba = sqlgbm.generate_query(table_name, output_type='probability')
+sql_query_xgb = sqlgbm_xgb.generate_query(table_name)
+sql_query_proba_xgb = sqlgbm_xgb.generate_query(table_name, output_type='probability')
 
 class TestTreeSQL(unittest.TestCase):
   def test_initialization(self):
     self.assertEqual(sqlgbm.booster, clf.booster_)
-    self.assertEqual(sqlgbm.cat_features, cat_features)
+    self.assertEqual(sqlgbm.cat_mappings, sqlgbm_xgb.cat_mappings)
     self.assertIsNotNone(sqlgbm.cat_mappings)
 
   def test_cat_mapping(self):
@@ -64,17 +72,29 @@ class TestTreeSQL(unittest.TestCase):
     query = sqlgbm.generate_query(table_name, output_type='all')
     self.assertIn("SELECT raw_pred, probability, CAST(probability > 0.5 AS INTEGER) as prediction FROM probabilities", query)
 
-  def test_prediction_correctness(self):
+  def test_prediction_correctness_lgb(self):
     y_pred_model = clf.predict(X_test)
     df_pl = pl.from_pandas(X_test)
     y_pred_sql = df_pl.sql(sql_query)['prediction'].to_list()
     accuracy = sum(a == b for a, b in zip(y_pred_model, y_pred_sql)) / len(y_pred_model)
-    self.assertGreater(accuracy, 0.99, "Predictions should match model predictions")
+    self.assertGreater(accuracy, 0.99)
 
     y_prob_model = clf.predict_proba(X_test)[:, 1]
     y_prob_sql = df_pl.sql(sql_query_proba)['probability'].to_list()
     mean_diff = np.mean(np.abs(y_prob_model - y_prob_sql))
-    self.assertLess(mean_diff, 0.01, "Probabilities should match model probabilities")
+    self.assertLess(mean_diff, 0.01)
+
+  def test_prediction_correctness_xgb(self):
+    y_pred_model = xgb_clf.predict(X_test)
+    df_pl = pl.from_pandas(X_test)
+    y_pred_sql = df_pl.sql(sql_query_xgb)['prediction'].to_list()
+    accuracy = sum(a == b for a, b in zip(y_pred_model, y_pred_sql)) / len(y_pred_model)
+    self.assertGreater(accuracy, 0.99)
+
+    y_prob_model = xgb_clf.predict_proba(X_test)[:, 1]
+    y_prob_sql = df_pl.sql(sql_query_proba_xgb)['probability'].to_list()
+    mean_diff = np.mean(np.abs(y_prob_model - y_prob_sql))
+    self.assertLess(mean_diff, 0.01)
 
 if __name__ == "__main__":
   unittest.main()
