@@ -7,6 +7,10 @@ This allows you to deploy your ML models directly in your database without any a
 
 ![sqlgbm in action](assets/image.png)
 
+### documentation
+
+You can find the documentation [here](https://sqlgbm.readthedocs.io/).
+
 ### installation
 ```bash
 pip install sqlgbm
