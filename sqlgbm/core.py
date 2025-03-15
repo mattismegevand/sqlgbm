@@ -1,6 +1,6 @@
 import pandas as pd
 from functools import lru_cache
-from typing import Dict, List, Optional
+from typing import Optional, Union
 
 
 class SQLGBM:
@@ -16,54 +16,86 @@ class SQLGBM:
     tree_df: DataFrame containing the tree structure from the model.
   """
 
-  def __init__(self, model, cat_features: Optional[List[str]] = None):
-    """Initialize TreeSQL with a model and categorical features.
+  def __init__(
+    self, model, X: Optional[pd.DataFrame] = None, cat_features: Optional[list[str]] = None, cat_mappings: Optional[dict[str, dict[str, int]]] = None
+  ):
+    """Initialize SQLGBM with a tree-based model.
 
     Args:
-      model: A trained tree-based model (currently supports LightGBM).
-      cat_features: A list of categorical feature names.
+      model: A trained tree-based model (supports LightGBM and XGBoost).
+      X: Optional DataFrame used for inferring categorical features.
+      cat_features: Optional list of categorical feature names.
+      cat_mappings: Optional dictionary mapping categorical features to their values.
     """
-    self.booster = model.booster_ if hasattr(model, 'booster_') else model
-    self.cat_features = cat_features or []
-    self.cat_mappings = self._get_cat_mapping()
+    self._initialize_model(model)
+    self.cat_mappings = cat_mappings or self._construct_cat_mappings(cat_features or X)
     self.tree_df = self.booster.trees_to_dataframe()
+    self._process_tree_dataframe()
+
+  def _initialize_model(self, model):
+    if 'lightgbm' in str(model.__class__):
+      self.booster = model.booster_ if hasattr(model, 'booster_') else model
+      self.model_type = 'lightgbm'
+    elif 'xgboost' in str(model.__class__):
+      self.booster = model.get_booster() if hasattr(model, 'get_booster') else model
+      self.model_type = 'xgboost'
+    else:
+      raise ValueError(f"Unsupported model type: {model.__class__}")
+
+  def _process_tree_dataframe(self):
+    if self.model_type == 'lightgbm':
+      self._process_lightgbm_dataframe()
+    else:
+      self._process_xgboost_dataframe()
+    self.tree_df["threshold"] = self.tree_df.apply(
+      lambda x: f"'{self.cat_mappings[x['split_feature']][int(x['threshold'])]}'" if x["split_feature"] in self.cat_mappings else x["threshold"],
+      axis=1,
+    )
+
+  def _process_lightgbm_dataframe(self):
     self.tree_df['decision_type'] = self.tree_df['decision_type'].replace({'==': '=', '!=': '<>'})
 
-  def _get_cat_mapping(self) -> Dict[str, Dict[int, str]]:
-    """Get mapping from categorical feature indices to actual values.
+  def _process_xgboost_dataframe(self):
+    self.tree_df.rename(
+      {
+        "Tree": "tree_index",
+        "ID": "node_index",
+        "Feature": "split_feature",
+        "Yes": "left_child",
+        "No": "right_child",
+        "Split": "threshold",
+        "Gain": "value",
+      },
+      axis=1,
+      inplace=True,
+    )
+    self.tree_df.loc[self.tree_df["split_feature"] == "Leaf", "split_feature"] = pd.NA
+    self.tree_df["decision_type"] = self.tree_df.apply(lambda x: '=' if x["split_feature"] in self.cat_mappings else '<', axis=1)
+    self.tree_df["threshold"] = self.tree_df.apply(lambda x: x["Category"][0] if x["split_feature"] in self.cat_mappings else x["threshold"], axis=1)
 
-    Returns:
-      A dictionary mapping categorical feature names to their value mappings.
-    """
-    return {f: dict(enumerate(self.booster.pandas_categorical[i])) for i, f in enumerate(self.cat_features)}
+  def _construct_cat_mappings(self, inp: Union[pd.DataFrame, list[str]]) -> dict[str, dict[str, int]]:
+    if isinstance(inp, pd.DataFrame):
+      return {f: dict(enumerate(inp[f].cat.categories)) for f in inp.columns if inp[f].dtype == 'category'}
+    return {f: dict(enumerate(self.booster.pandas_categorical[i])) for i, f in enumerate(inp)}
 
   @lru_cache(maxsize=None)
   def _generate_tree_sql(self, tree_idx: int, node_idx: Optional[str] = None) -> str:
-    """Generate SQL for a single tree.
-
-    Args:
-      tree_idx: The index of the tree.
-      node_idx: The index of the node to start from. If None, starts from the root.
-
-    Returns:
-      A SQL CASE expression representing the tree's decision logic.
-    """
     tree_df = self.tree_df[self.tree_df['tree_index'] == tree_idx]
     nodes = tree_df.set_index('node_index').to_dict('index')
-    node_key = node_idx or f'{tree_idx}-S0'
-    if node_key not in nodes: node_key = f'{tree_idx}-L0'
+    node_key = node_idx
+    if node_key not in nodes:
+      match self.model_type:
+        case 'lightgbm':
+          node_key = tree_df[tree_df['node_depth'] == 1]['node_index'].values[0]
+        case 'xgboost':
+          node_key = f"{tree_idx}-0"
     node = nodes[node_key]
 
     if pd.isna(node['left_child']): return str(node['value'])
 
     feature = node['split_feature']
     escaped_feature = f'`{feature}`'
-
-    if feature in self.cat_mappings:
-      threshold = f"'{self.cat_mappings[feature][int(node['threshold'])]}'"
-    else:
-      threshold = node['threshold']
-
+    threshold = node['threshold']
     operator = node['decision_type']
     condition = f"{escaped_feature} {operator} {threshold}"
 
@@ -87,7 +119,7 @@ class SQLGBM:
     Returns:
       A SQL query string that implements the model's prediction logic.
     """
-    tree_indices = range(self.booster.num_trees())
+    tree_indices = self.tree_df['tree_index'].unique()
     tree_parts = [self._generate_tree_sql(tree_idx) for tree_idx in tree_indices]
 
     used_features = set(self.tree_df['split_feature'].dropna().unique())
