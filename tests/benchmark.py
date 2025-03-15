@@ -11,17 +11,18 @@ import xgboost as xgb
 
 from sqlgbm import SQLGBM
 
+
 def run_benchmark(args):
   """Run a simple benchmark comparing TreeSQL to native LightGBM and XGBoost."""
   print("Loading data...")
-  titanic = pd.read_csv(os.path.join(os.path.dirname(__file__), '../assets/titanic.csv'))
-  titanic['age'] = titanic['age'].fillna(titanic['age'].median())
-  titanic['embarked'] = titanic['embarked'].fillna(titanic['embarked'].mode()[0])
-  features = ['pclass', 'sex', 'age', 'sibsp', 'parch', 'fare', 'embarked']
+  titanic = pd.read_csv(os.path.join(os.path.dirname(__file__), "../assets/titanic.csv"))
+  titanic["age"] = titanic["age"].fillna(titanic["age"].median())
+  titanic["embarked"] = titanic["embarked"].fillna(titanic["embarked"].mode()[0])
+  features = ["pclass", "sex", "age", "sibsp", "parch", "fare", "embarked"]
   X = titanic[features].copy()
-  y = titanic['survived']
-  X['sex'] = X['sex'].astype('category')
-  X['embarked'] = X['embarked'].astype('category')
+  y = titanic["survived"]
+  X["sex"] = X["sex"].astype("category")
+  X["embarked"] = X["embarked"].astype("category")
 
   n = len(X)
   test_size = int(0.2 * n)
@@ -38,7 +39,7 @@ def run_benchmark(args):
 
   print("\nTraining LightGBM model...")
   clf_lgb = lgb.LGBMClassifier(n_estimators=args.n_estimators, max_depth=args.max_depth, verbose=-1)
-  clf_lgb.fit(X_train, y_train, categorical_feature=['sex', 'embarked'])
+  clf_lgb.fit(X_train, y_train, categorical_feature=["sex", "embarked"])
 
   print("Training XGBoost model...")
   clf_xgb = xgb.XGBClassifier(n_estimators=args.n_estimators, max_depth=args.max_depth, enable_categorical=True, base_score=0.5)
@@ -47,8 +48,8 @@ def run_benchmark(args):
   print("\nConverting to SQL...")
   sqlgbm_lgb = SQLGBM(clf_lgb, X_train)
   sqlgbm_xgb = SQLGBM(clf_xgb, X_train)
-  sql_query_lgb = sqlgbm_lgb.generate_query('self', 'probability')
-  sql_query_xgb = sqlgbm_xgb.generate_query('self', 'probability')
+  sql_query_lgb = sqlgbm_lgb.generate_query("self", "probability")
+  sql_query_xgb = sqlgbm_xgb.generate_query("self", "probability")
 
   if args.show_query:
     print(f"\nGenerated LightGBM SQL Query: {sql_query_lgb}")
@@ -73,11 +74,11 @@ def run_benchmark(args):
   y_prob_sql_xgb = df_pl.sql(sql_query_xgb)
   sql_time_xgb = time.time() - start_time
 
-  assert (abs(y_prob_lgb[:,1] - y_prob_sql_lgb.to_numpy().reshape(-1)) < 1e-4).all()
+  assert (abs(y_prob_lgb[:, 1] - y_prob_sql_lgb.to_numpy().reshape(-1)) < 1e-4).all()
   # assert (abs(y_prob_xgb[:,1] - y_prob_sql_xgb.to_numpy().reshape(-1)) < 1e-4).all()
 
-  y_pred_lgb = (y_prob_lgb[:,1] > 0.5).astype(int)
-  y_pred_xgb = (y_prob_xgb[:,1] > 0.5).astype(int)
+  y_pred_lgb = (y_prob_lgb[:, 1] > 0.5).astype(int)
+  y_pred_xgb = (y_prob_xgb[:, 1] > 0.5).astype(int)
   accuracy_lgb = (y_test == y_pred_lgb).mean()
   accuracy_xgb = (y_test == y_pred_xgb).mean()
   assert accuracy_lgb > 0.8
@@ -94,20 +95,21 @@ def run_benchmark(args):
   print("LightGBM:")
   print(f"Native prediction time: {lgb_time:.6f} seconds")
   print(f"SQL query prediction time: {sql_time_lgb:.6f} seconds")
-  print(f"SQL/Native ratio: {sql_time_lgb/lgb_time:.2f}x")
+  print(f"SQL/Native ratio: {sql_time_lgb / lgb_time:.2f}x")
   print(f"Accuracy: {accuracy_lgb:.2f}")
   print(f"{'=' * 50}")
   print("XGBoost:")
   print(f"Native prediction time: {xgb_time:.6f} seconds")
   print(f"SQL query prediction time: {sql_time_xgb:.6f} seconds")
-  print(f"SQL/Native ratio: {sql_time_xgb/xgb_time:.2f}x")
+  print(f"SQL/Native ratio: {sql_time_xgb / xgb_time:.2f}x")
   print(f"Accuracy: {accuracy_xgb:.2f}")
   print(f"{'=' * 50}")
 
+
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description='Run TreeSQL benchmark')
-  parser.add_argument('--max_depth', type=int, default=None, help='Maximum depth of trees (default: None - unlimited)')
-  parser.add_argument('--n_estimators', type=int, default=100, help='Number of trees (default: 100)')
-  parser.add_argument('--show-query', action='store_true', default=False, help='Show the generated SQL query')
+  parser = argparse.ArgumentParser(description="Run TreeSQL benchmark")
+  parser.add_argument("--max_depth", type=int, default=None, help="Maximum depth of trees (default: None - unlimited)")
+  parser.add_argument("--n_estimators", type=int, default=100, help="Number of trees (default: 100)")
+  parser.add_argument("--show-query", action="store_true", default=False, help="Show the generated SQL query")
   args = parser.parse_args()
   run_benchmark(args)

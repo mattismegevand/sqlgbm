@@ -14,7 +14,7 @@ pip install sqlgbm
 
 ## Usage
 
-sqlgbm currently supports LightGBM models and can convert them to SQL queries:
+sqlgbm currently supports LightGBM and XGBoost models and can convert them to SQL queries:
 
 ```python
 from sqlgbm import SQLGBM
@@ -50,7 +50,7 @@ sqlgbm supports different output formats:
 
 ### Roadmap
 
-- [ ] Add support for more models (e.g. XGBoost, CatBoost)
+- [ ] Add support for CatBoost
 - [ ] Optimize tree generation for large datasets
 
 ### License

@@ -33,17 +33,17 @@ class SQLGBM:
     self._process_tree_dataframe()
 
   def _initialize_model(self, model):
-    if 'lightgbm' in str(model.__class__):
-      self.booster = model.booster_ if hasattr(model, 'booster_') else model
-      self.model_type = 'lightgbm'
-    elif 'xgboost' in str(model.__class__):
-      self.booster = model.get_booster() if hasattr(model, 'get_booster') else model
-      self.model_type = 'xgboost'
+    if "lightgbm" in str(model.__class__):
+      self.booster = model.booster_ if hasattr(model, "booster_") else model
+      self.model_type = "lightgbm"
+    elif "xgboost" in str(model.__class__):
+      self.booster = model.get_booster() if hasattr(model, "get_booster") else model
+      self.model_type = "xgboost"
     else:
       raise ValueError(f"Unsupported model type: {model.__class__}")
 
   def _process_tree_dataframe(self):
-    if self.model_type == 'lightgbm':
+    if self.model_type == "lightgbm":
       self._process_lightgbm_dataframe()
     else:
       self._process_xgboost_dataframe()
@@ -53,7 +53,7 @@ class SQLGBM:
     )
 
   def _process_lightgbm_dataframe(self):
-    self.tree_df['decision_type'] = self.tree_df['decision_type'].replace({'==': '=', '!=': '<>'})
+    self.tree_df["decision_type"] = self.tree_df["decision_type"].replace({"==": "=", "!=": "<>"})
 
   def _process_xgboost_dataframe(self):
     self.tree_df.rename(
@@ -70,41 +70,42 @@ class SQLGBM:
       inplace=True,
     )
     self.tree_df.loc[self.tree_df["split_feature"] == "Leaf", "split_feature"] = pd.NA
-    self.tree_df["decision_type"] = self.tree_df.apply(lambda x: '=' if x["split_feature"] in self.cat_mappings else '<', axis=1)
+    self.tree_df["decision_type"] = self.tree_df.apply(lambda x: "=" if x["split_feature"] in self.cat_mappings else "<", axis=1)
     self.tree_df["threshold"] = self.tree_df.apply(lambda x: x["Category"][0] if x["split_feature"] in self.cat_mappings else x["threshold"], axis=1)
 
   def _construct_cat_mappings(self, inp: Union[pd.DataFrame, list[str]]) -> dict[str, dict[str, int]]:
     if isinstance(inp, pd.DataFrame):
-      return {f: dict(enumerate(inp[f].cat.categories)) for f in inp.columns if inp[f].dtype == 'category'}
+      return {f: dict(enumerate(inp[f].cat.categories)) for f in inp.columns if inp[f].dtype == "category"}
     return {f: dict(enumerate(self.booster.pandas_categorical[i])) for i, f in enumerate(inp)}
 
   @lru_cache(maxsize=None)
   def _generate_tree_sql(self, tree_idx: int, node_idx: Optional[str] = None) -> str:
-    tree_df = self.tree_df[self.tree_df['tree_index'] == tree_idx]
-    nodes = tree_df.set_index('node_index').to_dict('index')
+    tree_df = self.tree_df[self.tree_df["tree_index"] == tree_idx]
+    nodes = tree_df.set_index("node_index").to_dict("index")
     node_key = node_idx
     if node_key not in nodes:
       match self.model_type:
-        case 'lightgbm':
-          node_key = tree_df[tree_df['node_depth'] == 1]['node_index'].values[0]
-        case 'xgboost':
+        case "lightgbm":
+          node_key = tree_df[tree_df["node_depth"] == 1]["node_index"].values[0]
+        case "xgboost":
           node_key = f"{tree_idx}-0"
     node = nodes[node_key]
 
-    if pd.isna(node['left_child']): return str(node['value'])
+    if pd.isna(node["left_child"]):
+      return str(node["value"])
 
-    feature = node['split_feature']
-    escaped_feature = f'`{feature}`'
-    threshold = node['threshold']
-    operator = node['decision_type']
+    feature = node["split_feature"]
+    escaped_feature = f"`{feature}`"
+    threshold = node["threshold"]
+    operator = node["decision_type"]
     condition = f"{escaped_feature} {operator} {threshold}"
 
-    left_subtree = self._generate_tree_sql(tree_idx, node['left_child'])
-    right_subtree = self._generate_tree_sql(tree_idx, node['right_child'])
+    left_subtree = self._generate_tree_sql(tree_idx, node["left_child"])
+    right_subtree = self._generate_tree_sql(tree_idx, node["right_child"])
 
     return f"CASE WHEN {condition} THEN {left_subtree} ELSE {right_subtree} END"
 
-  def generate_query(self, table_name: str, output_type: str = 'prediction', fast_sigmoid: bool = False) -> str:
+  def generate_query(self, table_name: str, output_type: str = "prediction", fast_sigmoid: bool = False) -> str:
     """Generate a SQL query for the model.
 
     Args:
@@ -119,17 +120,17 @@ class SQLGBM:
     Returns:
       A SQL query string that implements the model's prediction logic.
     """
-    tree_indices = self.tree_df['tree_index'].unique()
+    tree_indices = self.tree_df["tree_index"].unique()
     tree_parts = [self._generate_tree_sql(tree_idx) for tree_idx in tree_indices]
 
-    used_features = set(self.tree_df['split_feature'].dropna().unique())
-    feature_cols = [f'`{feature}`' for feature in used_features]
+    used_features = set(self.tree_df["split_feature"].dropna().unique())
+    feature_cols = [f"`{feature}`" for feature in used_features]
 
     sigmoid_expr = "raw_pred / (1 + abs(raw_pred))" if fast_sigmoid else "1 / (1 + exp(-raw_pred))"
 
     sql = f"""
     WITH features_subset AS (
-      SELECT {', '.join(feature_cols)}
+      SELECT {", ".join(feature_cols)}
       FROM {table_name}
     ), raw_prediction AS (
       SELECT ({" + ".join(tree_parts)}) AS raw_pred
@@ -142,10 +143,10 @@ class SQLGBM:
     """
 
     output_map = {
-      'raw': "SELECT raw_pred FROM raw_prediction",
-      'probability': "SELECT probability FROM probabilities",
-      'prediction': "SELECT CAST(probability > 0.5 AS INTEGER) as prediction FROM probabilities",
-      'all': """SELECT raw_pred, probability, CAST(probability > 0.5 AS INTEGER) as prediction FROM probabilities"""
+      "raw": "SELECT raw_pred FROM raw_prediction",
+      "probability": "SELECT probability FROM probabilities",
+      "prediction": "SELECT CAST(probability > 0.5 AS INTEGER) as prediction FROM probabilities",
+      "all": """SELECT raw_pred, probability, CAST(probability > 0.5 AS INTEGER) as prediction FROM probabilities""",
     }
 
-    return sql + output_map.get(output_type, output_map['all'])
+    return sql + output_map.get(output_type, output_map["all"])
